@@ -5,7 +5,7 @@ import { Upload, FileText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { showError, setUploading } from '@/store/slices/uiSlice';
 import { addCandidate } from '@/store/slices/candidatesSlice';
-import { startInterview, questionPool } from '@/store/slices/interviewSlice';
+import { startInterview } from '@/store/slices/interviewSlice';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import { RootState } from '@/store';
@@ -81,14 +81,13 @@ export function ResumeUploader() {
     try {
       const parseResult = await apiService.parseResume(selectedFile);
 
-      // Generate interview questions (2 easy, 2 medium, 2 hard)
-      const questions = [
-        ...questionPool.filter((q) => q.difficulty === 'easy').slice(0, 2),
-        ...questionPool.filter((q) => q.difficulty === 'medium').slice(0, 2),
-        ...questionPool.filter((q) => q.difficulty === 'hard').slice(0, 2),
-      ].map((q, index) => ({
-        ...q,
-        id: `q-${Date.now()}-${index}`, // unique ID
+      // Generate interview questions using backend API
+      const questionsResponse = await apiService.generateQuestions('Full Stack Developer');
+      const questions = questionsResponse.questions.map((q, index) => ({
+        id: q.id || `q-${Date.now()}-${index}`,
+        text: q.text,
+        difficulty: q.difficulty,
+        timeLimit: q.time_limit || (q.difficulty === 'easy' ? 30 : q.difficulty === 'medium' ? 90 : 180),
       }));
 
       const candidateId = `candidate-${Date.now()}`;

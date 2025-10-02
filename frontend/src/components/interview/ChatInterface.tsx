@@ -30,7 +30,7 @@ export function ChatInterface() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Check if profile is complete
+  // Check if profile is complete and initialize chat (RUNS ONCE)
   useEffect(() => {
     if (currentCandidate) {
       const isProfileIncomplete = !currentCandidate.name || !currentCandidate.email || !currentCandidate.phone;
@@ -50,19 +50,44 @@ export function ChatInterface() {
         
         // Start the first question after a brief delay
         setTimeout(() => {
-          if (currentQuestion) {
+          if (currentCandidate?.questions?.[0]) {
+            const firstQuestion = currentCandidate.questions[0];
             setMessages(prev => [...prev, {
               type: 'bot',
-              content: `Question ${currentQuestionIndex + 1}/6 (${currentQuestion.difficulty.toUpperCase()}): ${currentQuestion.text}`,
+              content: `Question 1/6 (${firstQuestion.difficulty.toUpperCase()}): ${firstQuestion.text}`,
               timestamp: new Date()
             }]);
             setStartTime(new Date());
-            dispatch(setTimeRemaining(currentQuestion.timeLimit));
+            dispatch(setTimeRemaining(firstQuestion.timeLimit));
           }
         }, 2000);
       }
     }
-  }, [currentCandidate, hasResumed, dispatch, currentQuestion, currentQuestionIndex, messages.length]);
+  }, [currentCandidate, hasResumed]); // REMOVED problematic dependencies
+
+  // Handle question progression (SEPARATE EFFECT)
+  useEffect(() => {
+    if (currentCandidate && currentQuestion && startTime === null && messages.length > 1) {
+      // This runs when moving to next question (startTime is null after answer submission)
+      const questionNumber = currentQuestionIndex + 1;
+      
+      // Only add question if we don't already have it in messages
+      const lastMessage = messages[messages.length - 1];
+      const questionAlreadyShown = lastMessage.content.includes(`Question ${questionNumber}/6`);
+      
+      if (!questionAlreadyShown && questionNumber > 1) {
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            type: 'bot',
+            content: `Question ${questionNumber}/6 (${currentQuestion.difficulty.toUpperCase()}): ${currentQuestion.text}`,
+            timestamp: new Date()
+          }]);
+          setStartTime(new Date());
+          dispatch(setTimeRemaining(currentQuestion.timeLimit));
+        }, 1500);
+      }
+    }
+  }, [currentQuestionIndex, currentQuestion, startTime, messages.length]); // Only depend on what we need
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -108,19 +133,10 @@ export function ChatInterface() {
     setStartTime(null);
 
     if (currentQuestionIndex < 5) {
-      // Move to next question
+      // Move to next question (question display handled by separate useEffect)
       setTimeout(() => {
         dispatch(nextQuestion());
-        const nextQ = currentCandidate.questions[currentQuestionIndex + 1];
-        if (nextQ) {
-          setMessages(prev => [...prev, {
-            type: 'bot',
-            content: `Question ${currentQuestionIndex + 2}/6 (${nextQ.difficulty.toUpperCase()}): ${nextQ.text}`,
-            timestamp: new Date()
-          }]);
-          setStartTime(new Date());
-          dispatch(setTimeRemaining(nextQ.timeLimit));
-        }
+        // setStartTime and question display now handled by the separate useEffect
       }, 1500);
     } else {
       // Interview complete
