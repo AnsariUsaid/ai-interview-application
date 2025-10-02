@@ -16,8 +16,8 @@ export function MainLayout() {
   const { currentCandidateId, isInterviewActive } = useSelector((state: RootState) => state.interview);
 
   useEffect(() => {
-    // Check if there's an incomplete interview on load
-    if (currentCandidateId && isInterviewActive) {
+    // Check if there's an incomplete interview on load (user left mid-interview)
+    if (currentCandidateId && !isInterviewActive) {
       dispatch(showWelcomeBack());
     }
   }, [currentCandidateId, isInterviewActive, dispatch]);
