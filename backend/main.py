@@ -151,23 +151,67 @@ async def parse_resume(file: UploadFile = File(...)):
     info["raw_text_snippet"] = (text[:300] + "...") if text else ""
     return info
 
+# @app.post("/generate-questions")
+# async def generate_questions(req: GenerateQuestionsRequest):
+#     prompt = (
+#         f"You are an interview question generator for the role: {req.role}.\n"
+#         "Generate exactly 6 questions as a JSON array with keys: id, difficulty, text, time_limit.\n"
+#         "Order: 2 easy (20s), 2 medium (60s), 2 hard (120s). Return only JSON."
+#     )
+#     content = call_llm(prompt, max_tokens=700)
+#     if not content:
+#         return {"questions": STATIC_BANK}
+#     try:
+#         questions = json.loads(content)
+#         if not isinstance(questions, list) or len(questions) != 6:
+#             raise ValueError("invalid shape")
+#         return {"questions": questions}
+#     except Exception:
+#         return {"questions": STATIC_BANK}
+
 @app.post("/generate-questions")
 async def generate_questions(req: GenerateQuestionsRequest):
     prompt = (
         f"You are an interview question generator for the role: {req.role}.\n"
-        "Generate exactly 6 questions as a JSON array with keys: id, difficulty, text, time_limit.\n"
-        "Order: 2 easy (20s), 2 medium (60s), 2 hard (120s). Return only JSON."
+        "Return EXACTLY 6 questions as a JSON array ONLY, nothing else.\n"
+        "Each question must have: id, difficulty, text, time_limit.\n"
+        "Order: 2 easy (20s), 2 medium (60s), 2 hard (120s).\n"
+        "Do NOT include explanations, text, or Markdown.\n"
+        "The output must start with '[' and end with ']'."
     )
-    content = call_llm(prompt, max_tokens=700)
-    if not content:
-        return {"questions": STATIC_BANK}
-    try:
-        questions = json.loads(content)
-        if not isinstance(questions, list) or len(questions) != 6:
-            raise ValueError("invalid shape")
-        return {"questions": questions}
-    except Exception:
-        return {"questions": STATIC_BANK}
+
+    def extract_json_array(s: str):
+        import re, json
+        # Remove Markdown fences
+        s_clean = re.sub(r"```json|```", "", s, flags=re.IGNORECASE).strip()
+        try:
+            match = re.search(r"\[.*\]", s_clean, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+        except Exception as e:
+            print("JSON extraction failed:", e)
+        return None
+
+    # First LLM call
+    content = call_llm(prompt, max_tokens=1000)
+    if content:
+        questions = extract_json_array(content)
+        if questions and len(questions) == 6:
+            return {"questions": questions}
+
+    # Retry once if first attempt failed
+    print("First attempt failed, retrying LLM call...")
+    content_retry = call_llm(prompt, max_tokens=1000)
+    if content_retry:
+        questions = extract_json_array(content_retry)
+        if questions and len(questions) == 6:
+            return {"questions": questions}
+
+    # Fallback to static bank
+    print("Falling back to STATIC_BANK")
+    return {"questions": STATIC_BANK}
+
+
 
 @app.post("/evaluate-answer")
 async def evaluate_answer(req: EvaluateRequest):
@@ -198,19 +242,30 @@ async def evaluate_answer(req: EvaluateRequest):
 async def final_summary(req: FinalSummaryRequest):
     difficulty_weight = {"easy": 1, "medium": 2, "hard": 3}
     total_weight, total_max = 0.0, 0.0
+
     for a in req.answers:
         score = float(a.get("score", 0))
         diff = a.get("difficulty", "easy")
         w = difficulty_weight.get(diff, 1)
         total_weight += score * w
         total_max += 10 * w
-    final_pct = round((total_weight / total_max) * 100, 1) if total_max > 0 else 0
-    prompt = (
-        f"Provide a short 2-4 sentence summary for candidate {req.candidate_name or ''} "
-        f"based on answers: {json.dumps(req.answers)}.\n"
-        "Include strengths, weaknesses, and recommendation. Return plain text only."
+
+    if total_max > 0:
+        final_percent = round((total_weight / total_max) * 100, 1)
+        final_score = round((total_weight / total_max) * 10, 1)
+    else:
+        final_percent = 0.0
+        final_score = 0.0
+
+    content = (
+        f"Candidate answered {len(req.answers)} questions. "
+        f"Final Score: {final_score}/10 ({final_percent}%)."
     )
-    content = call_llm(prompt, max_tokens=300)
-    if not content:
-        content = f"Candidate {req.candidate_name or ''} scored {final_pct}%. AI unavailable."
-    return {"final_score": final_pct, "summary": content}
+
+    return {
+        "final_score": final_score,          # 0–10 scale
+        "final_percent": final_percent,      # 0–100 scale
+        "summary": content
+    }
+
+

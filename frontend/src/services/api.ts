@@ -130,22 +130,37 @@ export class ApiService {
       score: number;
     }>
   ): Promise<FinalSummaryResponse> {
+    console.log('API: generateFinalSummary called with:', { candidateName, answers });
+    
     try {
-      const response = await this.axiosInstance.post('/final-summary', {
+      const requestData = {
         candidate_name: candidateName,
         answers,
-      });
+      };
+      
+      console.log('API: Sending request to /final-summary:', requestData);
+      
+      const response = await this.axiosInstance.post('/final-summary', requestData);
+      
+      console.log('API: Response from /final-summary:', response.data);
+      
       return response.data;
     } catch (error) {
       console.error('Failed to generate summary from API, using fallback');
+      console.error('Error details:', error);
+      
       // Fallback summary calculation
       const totalScore = answers.reduce((sum, answer) => sum + answer.score, 0);
       const averageScore = Math.round((totalScore / answers.length) * 10) / 10;
       
-      return {
+      const fallbackResponse = {
         final_score: averageScore,
         summary: `Interview completed with an average score of ${averageScore}/10. AI summary unavailable.`,
       };
+      
+      console.log('API: Returning fallback response:', fallbackResponse);
+      
+      return fallbackResponse;
     }
   }
 

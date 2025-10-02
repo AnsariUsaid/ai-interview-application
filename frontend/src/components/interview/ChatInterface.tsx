@@ -27,6 +27,7 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Array<{ type: 'bot' | 'user'; content: string; timestamp: Date }>>([]);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
+  const [currentQuestionShown, setCurrentQuestionShown] = useState(-1); // Track which question is currently shown
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +58,7 @@ export function ChatInterface() {
               content: `Question 1/6 (${firstQuestion.difficulty.toUpperCase()}): ${firstQuestion.text}`,
               timestamp: new Date()
             }]);
+            setCurrentQuestionShown(0); // Mark question 0 as shown
             setStartTime(new Date());
             dispatch(setTimeRemaining(firstQuestion.timeLimit));
           }
@@ -67,27 +69,25 @@ export function ChatInterface() {
 
   // Handle question progression (SEPARATE EFFECT)
   useEffect(() => {
-    if (currentCandidate && currentQuestion && startTime === null && messages.length > 1) {
-      // This runs when moving to next question (startTime is null after answer submission)
+    if (currentCandidate && currentQuestion && currentQuestionIndex !== currentQuestionShown) {
+      // This runs when we need to show a new question
       const questionNumber = currentQuestionIndex + 1;
       
-      // Only add question if we don't already have it in messages
-      const lastMessage = messages[messages.length - 1];
-      const questionAlreadyShown = lastMessage.content.includes(`Question ${questionNumber}/6`);
-      
-      if (!questionAlreadyShown && questionNumber > 1) {
+      // Only show if this is a different question than what's currently shown
+      if (currentQuestionIndex > 0) { // Skip first question (handled by initialization)
         setTimeout(() => {
           setMessages(prev => [...prev, {
             type: 'bot',
             content: `Question ${questionNumber}/6 (${currentQuestion.difficulty.toUpperCase()}): ${currentQuestion.text}`,
             timestamp: new Date()
           }]);
+          setCurrentQuestionShown(currentQuestionIndex); // Mark this question as shown
           setStartTime(new Date());
           dispatch(setTimeRemaining(currentQuestion.timeLimit));
         }, 1500);
       }
     }
-  }, [currentQuestionIndex, currentQuestion, startTime, messages.length]); // Only depend on what we need
+  }, [currentQuestionIndex, currentQuestion, currentQuestionShown]); // Simplified dependencies
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -116,8 +116,21 @@ export function ChatInterface() {
       }]);
     }
 
-    // Generate AI score
-    const score = apiService.generateQuestionScore(finalAnswer, currentQuestion.difficulty);
+    // Generate AI score using backend API
+    let score = 5; // Default fallback
+    try {
+      const evaluationResult = await apiService.evaluateAnswer(
+        currentQuestion.id,
+        currentQuestion.text,
+        finalAnswer,
+        currentQuestion.difficulty
+      );
+      score = evaluationResult.score;
+    } catch (error) {
+      console.error('Failed to evaluate answer, using fallback:', error);
+      // Use fallback scoring
+      score = apiService.generateQuestionScore(finalAnswer, currentQuestion.difficulty);
+    }
     
     // Update candidate answer
     dispatch(updateCandidateAnswer({
@@ -139,34 +152,93 @@ export function ChatInterface() {
         // setStartTime and question display now handled by the separate useEffect
       }, 1500);
     } else {
-      // Interview complete
-      const allScores = currentCandidate.questions
-        .filter(q => q.score !== undefined)
-        .map(q => q.score!)
-        .concat([score]);
-      
-      const finalScore = Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length);
-      const summary = apiService.generateFinalSummary(allScores, currentCandidate.name);
-      
-      dispatch(completeInterview({
-        candidateId: currentCandidate.id,
-        finalScore,
-        summary
-      }));
-
-      // Show completion message
-      setTimeout(() => {
-        setMessages(prev => [...prev, {
-          type: 'bot',
-          content: `Thank you for completing the interview, ${currentCandidate.name}! Your final score is ${finalScore}/10. ${summary}`,
-          timestamp: new Date()
+      // Interview complete - Generate AI summary
+      const allAnswers = currentCandidate.questions
+        .filter(q => q.answer && q.score !== undefined)
+        .map(q => ({
+          question_id: q.id,
+          question_text: q.text,
+          answer_text: q.answer!,
+          difficulty: q.difficulty,
+          score: q.score!
+        }))
+        .concat([{
+          question_id: currentQuestion.id,
+          question_text: currentQuestion.text,
+          answer_text: finalAnswer,
+          difficulty: currentQuestion.difficulty,
+          score
         }]);
+      
+      try {
+        console.log('Generating final summary for:', currentCandidate.name);
+        console.log('All answers data:', allAnswers);
         
-        // End interview after showing results
+        // Call backend API for AI-generated summary
+        const summaryResponse = await apiService.generateFinalSummary(
+          currentCandidate.name,
+          allAnswers
+        );
+        
+        console.log('Summary response from API:', summaryResponse);
+        
+        const finalScore = summaryResponse.final_score;
+        const summary = summaryResponse.summary;
+        
+        console.log('Final score:', finalScore);
+        console.log('Summary text:', summary);
+        
+        dispatch(completeInterview({
+          candidateId: currentCandidate.id,
+          finalScore,
+          summary
+        }));
+
+        // Show completion message
         setTimeout(() => {
-          dispatch(endInterview());
-        }, 5000);
-      }, 1500);
+          setMessages(prev => [...prev, {
+            type: 'bot',
+            content: `Thank you for completing the interview, ${currentCandidate.name}! Your final score is ${finalScore}/10. ${summary}`,
+            timestamp: new Date()
+          }]);
+          
+          // End interview after showing results
+          setTimeout(() => {
+            dispatch(endInterview());
+          }, 5000);
+        }, 1500);
+      } catch (error) {
+        console.error('Failed to generate final summary:', error);
+        
+        // Fallback to simple scoring if API fails
+        const allScores = currentCandidate.questions
+          .filter(q => q.score !== undefined)
+          .map(q => q.score!)
+          .concat([score]);
+        
+        const finalScore = Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length);
+        const summary = `Interview completed with an average score of ${finalScore}/10. AI summary unavailable.`;
+        
+        dispatch(completeInterview({
+          candidateId: currentCandidate.id,
+          finalScore,
+          summary
+        }));
+
+        // Show completion message
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            type: 'bot',
+            content: `Thank you for completing the interview, ${currentCandidate.name}! Your final score is ${finalScore}/10. ${summary}`,
+            timestamp: new Date()
+          }]);
+          
+          // End interview after showing results
+          setTimeout(() => {
+            dispatch(endInterview());
+          }, 5000);
+        }, 1500);
+      }
     }
   };
 

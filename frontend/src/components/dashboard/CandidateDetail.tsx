@@ -18,9 +18,30 @@ interface CandidateDetailProps {
 }
 
 export function CandidateDetail({ candidate }: CandidateDetailProps) {
-  const formatTime = (seconds: number) => {
+  // Add error handling for malformed data
+  if (!candidate) {
+    return <div className="p-4 text-center text-muted-foreground">No candidate data available</div>;
+  }
+
+  // Debug logging to identify the issue
+  console.log('CandidateDetail - Candidate data:', candidate);
+  console.log('CandidateDetail - Questions:', candidate.questions);
+  
+  // Safe string conversion helper
+  const safeString = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return value.toString();
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+  
+  try {
+
+  const formatTime = (seconds?: number) => {
+    if (!seconds || isNaN(seconds)) return '-';
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -55,8 +76,10 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
     );
   };
 
-  const completedQuestions = candidate.questions.filter(q => q.answer);
-  const totalScore = candidate.questions
+  // Safe access to questions array
+  const questions = candidate.questions || [];
+  const completedQuestions = questions.filter(q => q.answer);
+  const totalScore = questions
     .filter(q => q.score !== undefined)
     .reduce((sum, q) => sum + (q.score || 0), 0);
   const avgScore = completedQuestions.length > 0 ? totalScore / completedQuestions.length : 0;
@@ -79,15 +102,15 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium">{candidate.name}</span>
+                <span className="font-medium">{safeString(candidate.name) || 'Unknown'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{candidate.email}</span>
+                <span className="text-sm">{safeString(candidate.email) || 'No email'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{candidate.phone}</span>
+                <span className="text-sm">{safeString(candidate.phone) || 'No phone'}</span>
               </div>
             </div>
             
@@ -99,7 +122,7 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
                 <div>
                   <p className="font-medium">Started</p>
                   <p className="text-muted-foreground">
-                    {new Date(candidate.createdAt).toLocaleDateString()}
+                    {candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : 'Unknown'}
                   </p>
                 </div>
               </div>
@@ -148,7 +171,7 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
           <CardHeader>
             <CardTitle>Interview Questions & Answers</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {completedQuestions.length} of {candidate.questions.length} questions answered
+              {completedQuestions.length} of {questions.length} questions answered
             </p>
           </CardHeader>
           <CardContent>
@@ -164,30 +187,26 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {candidate.questions.map((question, index) => (
-                    <TableRow key={question.id}>
+                  {questions.map((question, index) => (
+                    <TableRow key={question.id || index}>
                       <TableCell className="max-w-md">
                         <p className="font-medium text-sm">Q{index + 1}</p>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {question.text}
+                          {safeString(question.text) || 'No question text'}
                         </p>
                       </TableCell>
                       <TableCell>
-                        {getDifficultyBadge(question.difficulty)}
+                        {getDifficultyBadge(question.difficulty || 'easy')}
                       </TableCell>
                       <TableCell className="max-w-md">
                         {question.answer ? (
-                          <p className="text-sm line-clamp-3">{question.answer}</p>
+                          <p className="text-sm line-clamp-3">{safeString(question.answer)}</p>
                         ) : (
                           <span className="text-muted-foreground text-sm">Not answered</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {question.timeSpent ? (
-                          <span className="text-sm">{formatTime(question.timeSpent)}</span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        )}
+                        <span className="text-sm">{formatTime(question.timeSpent)}</span>
                       </TableCell>
                       <TableCell>
                         {getScoreBadge(question.score)}
@@ -210,14 +229,30 @@ export function CandidateDetail({ candidate }: CandidateDetailProps) {
         >
           <Card>
             <CardHeader>
-              <CardTitle>AI Interview Summary</CardTitle>
+            <CardTitle>Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-relaxed">{candidate.summary}</p>
+              <p className="text-sm leading-relaxed">{safeString(candidate.summary)}</p>
             </CardContent>
           </Card>
         </motion.div>
       )}
     </div>
-  );
+  )
+  } catch (error) {
+    console.error('CandidateDetail error:', error);
+    console.error('Candidate data that caused error:', candidate);
+    return (
+      <div className="p-4 text-center">
+        <p className="text-red-500 mb-2">Error displaying candidate details</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          Error: {error instanceof Error ? error.message : 'Unknown error'}
+        </p>
+        <details className="text-left text-xs bg-muted p-2 rounded">
+          <summary className="cursor-pointer mb-2">Debug Info</summary>
+          <pre>{JSON.stringify(candidate, null, 2)}</pre>
+        </details>
+      </div>
+    );
+  }
 }

@@ -87,7 +87,7 @@ export function ResumeUploader() {
         id: q.id || `q-${Date.now()}-${index}`,
         text: q.text,
         difficulty: q.difficulty,
-        timeLimit: q.time_limit || (q.difficulty === 'easy' ? 30 : q.difficulty === 'medium' ? 90 : 180),
+        timeLimit: q.time_limit || (q.difficulty === 'easy' ? 20 : q.difficulty === 'medium' ? 60 : 120),
       }));
 
       const candidateId = `candidate-${Date.now()}`;
