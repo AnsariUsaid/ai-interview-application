@@ -285,31 +285,34 @@ export function ChatInterface() {
         </CardContent>
       </Card>
 
-      {/* Answer Input */}
-      {startTime && (
-        <Card>
-          <CardContent className="p-6 space-y-4">
-            <Textarea
-              placeholder="Type your answer here..."
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className="min-h-[120px]"
-              disabled={isSubmitting}
-            />
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">
-                {answer.length} characters
-              </span>
-              <Button 
-                onClick={() => handleSubmitAnswer(false)}
-                disabled={isSubmitting || !answer.trim()}
-              >
-                {isSubmitting ? 'Submitting...' : (isLastQuestion ? 'Finish Interview' : 'Submit Answer')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+    {/* Answer Input - Always Mounted */}
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <Textarea
+          placeholder={currentQuestionIndex === currentQuestionShown ? "Type your answer here..." : "Waiting for next question..."}
+          value={answer}
+          onChange={(e) => {
+            if (currentQuestionIndex === currentQuestionShown && !isSubmitting) {
+              setAnswer(e.target.value)
+            }
+          }}
+          className="min-h-[120px]"
+          disabled={isSubmitting || currentQuestionIndex !== currentQuestionShown}
+        />
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">
+            {answer.length} characters
+          </span>
+          <Button 
+            onClick={() => handleSubmitAnswer(false)}
+            disabled={isSubmitting || !answer.trim() || currentQuestionIndex !== currentQuestionShown}
+          >
+            {isSubmitting ? 'Submitting...' : (isLastQuestion ? 'Finish Interview' : 'Submit Answer')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
     </div>
   );
 }
