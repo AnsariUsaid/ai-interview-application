@@ -77,37 +77,42 @@ export function ResumeUploader() {
     if (!selectedFile || isUploading) return;
 
     dispatch(setUploading(true));
-    dispatch(showError(''));
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
+      const parseResult = await apiService.parseResume(selectedFile);
 
-      const response = await fetch('/api/parse_resume', {
-        method: 'POST',
-        body: formData,
+      // Generate interview questions using backend API
+      const questionsResponse = await apiService.generateQuestions('Full Stack Developer');
+      const questions = questionsResponse.questions.map((q, index) => ({
+        id: q.id || `q-${Date.now()}-${index}`,
+        text: q.text,
+        difficulty: q.difficulty,
+        timeLimit: q.time_limit || (q.difficulty === 'easy' ? 20 : q.difficulty === 'medium' ? 60 : 120),
+      }));
+
+      const candidateId = `candidate-${Date.now()}`;
+
+      // Add candidate
+      dispatch(
+        addCandidate({
+          id: candidateId,
+          name: parseResult.name || '',
+          email: parseResult.email || '',
+          phone: parseResult.phone || '',
+          questions,
+          status: 'incomplete',
+          createdAt: new Date().toISOString(),
+        })
+      );
+
+      // Start interview
+      dispatch(startInterview(candidateId));
+
+      toast({
+        title: 'Resume uploaded successfully',
+        description: 'Your interview will begin shortly.',
       });
-      let errorMsg = '';
-      if (!response.ok) {
-        try {
-          const errData = await response.json();
-          if (errData && errData.detail) {
-            if (errData.detail.includes('unsupported file')) {
-              errorMsg = 'Unsupported file type. Please upload a PDF or DOCX.';
-            } else if (errData.detail.includes('file too large')) {
-              errorMsg = 'File is too large. Please upload a file under 5MB.';
-            } else {
-              errorMsg = errData.detail;
-            }
-          } else {
-            errorMsg = 'Failed to parse resume. Please check your file and try again.';
-          }
-        } catch {
-          errorMsg = 'Failed to parse resume. Please check your file and try again.';
-        }
-        throw new Error(errorMsg);
-      }
-      // You can process the response data here if needed
+
       setSelectedFile(null); // reset selected file
     } catch (error) {
       dispatch(
@@ -211,4 +216,3 @@ export function ResumeUploader() {
     </div>
   );
 }
-
