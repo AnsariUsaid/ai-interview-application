@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
@@ -15,10 +15,23 @@ interface TimerProps {
 export function Timer({ timeLimit, onTimeUp }: TimerProps) {
   const dispatch = useDispatch();
   const { timeRemaining } = useSelector((state: RootState) => state.interview);
+  const hasCalledTimeUp = useRef(false); // Prevent multiple calls
 
   useEffect(() => {
-    if (timeRemaining <= 0) {
+    // Reset the flag when a new question starts (timeRemaining gets reset to timeLimit)
+    if (timeRemaining === timeLimit) {
+      hasCalledTimeUp.current = false;
+    }
+
+    // Handle time up - call only once
+    if (timeRemaining <= 0 && !hasCalledTimeUp.current) {
+      hasCalledTimeUp.current = true;
       onTimeUp();
+      return; // Don't set up interval when time is up
+    }
+
+    // Don't run timer if time is already up
+    if (timeRemaining <= 0) {
       return;
     }
 
@@ -27,7 +40,7 @@ export function Timer({ timeLimit, onTimeUp }: TimerProps) {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeRemaining, dispatch, onTimeUp]);
+  }, [timeRemaining, timeLimit, dispatch, onTimeUp]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -59,22 +72,32 @@ export function Timer({ timeLimit, onTimeUp }: TimerProps) {
               <span className="font-medium">Time Remaining</span>
             </div>
             <span className={`text-xl font-bold ${isUrgent ? 'text-destructive' : isWarning ? 'text-warning' : 'text-primary'}`}>
-              {formatTime(timeRemaining)}
+              {formatTime(Math.max(0, timeRemaining))}
             </span>
           </div>
           
           <Progress 
-            value={progressPercentage} 
+            value={Math.max(0, progressPercentage)} 
             className={`h-2 ${isUrgent ? '[&>div]:bg-destructive' : isWarning ? '[&>div]:bg-warning' : ''}`}
           />
           
-          {isUrgent && (
+          {isUrgent && timeRemaining > 0 && (
             <motion.p 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-sm text-destructive mt-2 font-medium"
             >
               Time is running out!
+            </motion.p>
+          )}
+          
+          {timeRemaining === 0 && (
+            <motion.p 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-sm text-destructive mt-2 font-medium"
+            >
+              Time's up! Submitting answer...
             </motion.p>
           )}
         </CardContent>

@@ -27,7 +27,8 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Array<{ type: 'bot' | 'user'; content: string; timestamp: Date }>>([]);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
-  const [currentQuestionShown, setCurrentQuestionShown] = useState(-1); // Track which question is currently shown
+  const [currentQuestionShown, setCurrentQuestionShown] = useState(-1);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Submission guard
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -58,66 +59,70 @@ export function ChatInterface() {
               content: `Question 1/6 (${firstQuestion.difficulty.toUpperCase()}): ${firstQuestion.text}`,
               timestamp: new Date()
             }]);
-            setCurrentQuestionShown(0); // Mark question 0 as shown
+            setCurrentQuestionShown(0);
             setStartTime(new Date());
             dispatch(setTimeRemaining(firstQuestion.timeLimit));
           }
         }, 2000);
       }
     }
-  }, [currentCandidate, hasResumed]); // REMOVED problematic dependencies
+  }, [currentCandidate, hasResumed]);
 
   // Handle question progression (SEPARATE EFFECT)
   useEffect(() => {
     if (currentCandidate && currentQuestion && currentQuestionIndex !== currentQuestionShown) {
-      // This runs when we need to show a new question
       const questionNumber = currentQuestionIndex + 1;
       
-      // Only show if this is a different question than what's currently shown
-      if (currentQuestionIndex > 0) { // Skip first question (handled by initialization)
+      if (currentQuestionIndex > 0) {
         setTimeout(() => {
           setMessages(prev => [...prev, {
             type: 'bot',
             content: `Question ${questionNumber}/6 (${currentQuestion.difficulty.toUpperCase()}): ${currentQuestion.text}`,
             timestamp: new Date()
           }]);
-          setCurrentQuestionShown(currentQuestionIndex); // Mark this question as shown
+          setCurrentQuestionShown(currentQuestionIndex);
           setStartTime(new Date());
+          setIsSubmitting(false); // Reset submission guard for new question
           dispatch(setTimeRemaining(currentQuestion.timeLimit));
         }, 1500);
       }
     }
-  }, [currentQuestionIndex, currentQuestion, currentQuestionShown]); // Simplified dependencies
+  }, [currentQuestionIndex, currentQuestion, currentQuestionShown]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle time up
-  useEffect(() => {
-    if (timeRemaining === 0 && currentQuestion && startTime) {
-      handleSubmitAnswer(true);
-    }
-  }, [timeRemaining, currentQuestion, startTime]);
+  // REMOVED: Duplicate time-up handler (Timer component handles this now)
 
   const handleSubmitAnswer = async (timeUp = false) => {
-    if (!currentCandidate || !currentQuestion || !startTime) return;
-
-    const timeSpent = (new Date().getTime() - startTime.getTime()) / 1000;
-    const finalAnswer = timeUp ? answer || "No answer provided" : answer;
-    
-    // Add user answer to chat
-    if (finalAnswer.trim()) {
-      setMessages(prev => [...prev, {
-        type: 'user',
-        content: finalAnswer,
-        timestamp: new Date()
-      }]);
+    // Submission guard - prevent double submission
+    if (isSubmitting) {
+      console.log('Already submitting, ignoring duplicate call');
+      return;
     }
 
+    if (!currentCandidate || !currentQuestion || !startTime) {
+      console.log('Missing required data for submission');
+      return;
+    }
+
+    setIsSubmitting(true); // Lock submission
+    console.log('Submitting answer:', { timeUp, answer: answer || 'empty' });
+
+    const timeSpent = (new Date().getTime() - startTime.getTime()) / 1000;
+    const finalAnswer = answer.trim() || "No answer provided";
+    
+    // Add user answer to chat - ALWAYS show it, even if empty
+    setMessages(prev => [...prev, {
+      type: 'user',
+      content: finalAnswer,
+      timestamp: new Date()
+    }]);
+
     // Generate AI score using backend API
-    let score = 5; // Default fallback
+    let score = 5;
     try {
       const evaluationResult = await apiService.evaluateAnswer(
         currentQuestion.id,
@@ -128,7 +133,6 @@ export function ChatInterface() {
       score = evaluationResult.score;
     } catch (error) {
       console.error('Failed to evaluate answer, using fallback:', error);
-      // Use fallback scoring
       score = apiService.generateQuestionScore(finalAnswer, currentQuestion.difficulty);
     }
     
@@ -146,10 +150,9 @@ export function ChatInterface() {
     setStartTime(null);
 
     if (currentQuestionIndex < 5) {
-      // Move to next question (question display handled by separate useEffect)
+      // Move to next question
       setTimeout(() => {
         dispatch(nextQuestion());
-        // setStartTime and question display now handled by the separate useEffect
       }, 1500);
     } else {
       // Interview complete - Generate AI summary
@@ -174,7 +177,6 @@ export function ChatInterface() {
         console.log('Generating final summary for:', currentCandidate.name);
         console.log('All answers data:', allAnswers);
         
-        // Call backend API for AI-generated summary
         const summaryResponse = await apiService.generateFinalSummary(
           currentCandidate.name,
           allAnswers
@@ -194,7 +196,6 @@ export function ChatInterface() {
           summary
         }));
 
-        // Show completion message
         setTimeout(() => {
           setMessages(prev => [...prev, {
             type: 'bot',
@@ -202,7 +203,6 @@ export function ChatInterface() {
             timestamp: new Date()
           }]);
           
-          // End interview after showing results
           setTimeout(() => {
             dispatch(endInterview());
           }, 5000);
@@ -210,7 +210,6 @@ export function ChatInterface() {
       } catch (error) {
         console.error('Failed to generate final summary:', error);
         
-        // Fallback to simple scoring if API fails
         const allScores = currentCandidate.questions
           .filter(q => q.score !== undefined)
           .map(q => q.score!)
@@ -225,7 +224,6 @@ export function ChatInterface() {
           summary
         }));
 
-        // Show completion message
         setTimeout(() => {
           setMessages(prev => [...prev, {
             type: 'bot',
@@ -233,7 +231,6 @@ export function ChatInterface() {
             timestamp: new Date()
           }]);
           
-          // End interview after showing results
           setTimeout(() => {
             dispatch(endInterview());
           }, 5000);
@@ -297,7 +294,7 @@ export function ChatInterface() {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               className="min-h-[120px]"
-              disabled={timeRemaining === 0}
+              disabled={isSubmitting}
             />
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">
@@ -305,9 +302,9 @@ export function ChatInterface() {
               </span>
               <Button 
                 onClick={() => handleSubmitAnswer(false)}
-                disabled={!answer.trim() || timeRemaining === 0}
+                disabled={isSubmitting || !answer.trim()}
               >
-                {isLastQuestion ? 'Finish Interview' : 'Submit Answer'}
+                {isSubmitting ? 'Submitting...' : (isLastQuestion ? 'Finish Interview' : 'Submit Answer')}
               </Button>
             </div>
           </CardContent>
