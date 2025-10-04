@@ -39,10 +39,22 @@ export function ChatInterface() {
       setShowProfileForm(isProfileIncomplete);
       
       if (!isProfileIncomplete && messages.length === 0) {
-        // Initialize chat with welcome message
-        const welcomeMessage = hasResumed 
-          ? `Welcome back, ${currentCandidate.name}! Let's continue with your interview.`
-          : `Hello ${currentCandidate.name}! Welcome to your AI-powered interview. We'll go through 6 questions of varying difficulty. Each question has a time limit, so please answer as best as you can within the given time.`;
+        // Determine the correct question to show based on current index
+        const targetQuestionIndex = currentQuestionIndex;
+        const targetQuestion = currentCandidate.questions[targetQuestionIndex];
+        
+        if (!targetQuestion) return;
+        
+        // Build welcome message
+        let welcomeMessage: string;
+        if (hasResumed && targetQuestionIndex > 0) {
+          // Resuming mid-interview - show progress summary
+          const answeredCount = targetQuestionIndex;
+          welcomeMessage = `Welcome back, ${currentCandidate.name}! You've completed ${answeredCount} of 6 questions. Let's continue with your interview.`;
+        } else {
+          // Fresh start
+          welcomeMessage = `Hello ${currentCandidate.name}! Welcome to your AI-powered interview. We'll go through 6 questions of varying difficulty. Each question has a time limit, so please answer as best as you can within the given time.`;
+        }
         
         setMessages([{
           type: 'bot',
@@ -50,19 +62,17 @@ export function ChatInterface() {
           timestamp: new Date()
         }]);
         
-        // Start the first question after a brief delay
+        // Show the current question after a brief delay
         setTimeout(() => {
-          if (currentCandidate?.questions?.[0]) {
-            const firstQuestion = currentCandidate.questions[0];
-            setMessages(prev => [...prev, {
-              type: 'bot',
-              content: `Question 1/6 (${firstQuestion.difficulty.toUpperCase()}): ${firstQuestion.text}`,
-              timestamp: new Date()
-            }]);
-            setCurrentQuestionShown(0);
-            setStartTime(new Date());
-            dispatch(setTimeRemaining(firstQuestion.timeLimit));
-          }
+          const questionNumber = targetQuestionIndex + 1;
+          setMessages(prev => [...prev, {
+            type: 'bot',
+            content: `Question ${questionNumber}/6 (${targetQuestion.difficulty.toUpperCase()}): ${targetQuestion.text}`,
+            timestamp: new Date()
+          }]);
+          setCurrentQuestionShown(targetQuestionIndex); // Mark this question as shown
+          setStartTime(new Date());
+          dispatch(setTimeRemaining(targetQuestion.timeLimit));
         }, 2000);
       }
     }
@@ -70,10 +80,10 @@ export function ChatInterface() {
 
   // Handle question progression (SEPARATE EFFECT)
   useEffect(() => {
-    if (currentCandidate && currentQuestion && currentQuestionIndex !== currentQuestionShown) {
+    if (currentCandidate && currentQuestion && currentQuestionIndex !== currentQuestionShown && currentQuestionShown >= 0) {
       const questionNumber = currentQuestionIndex + 1;
       
-      if (currentQuestionIndex > 0) {
+      if (messages.length > 0) {
         setTimeout(() => {
           setMessages(prev => [...prev, {
             type: 'bot',
@@ -87,7 +97,7 @@ export function ChatInterface() {
         }, 1500);
       }
     }
-  }, [currentQuestionIndex, currentQuestion, currentQuestionShown]);
+}, [currentQuestionIndex, currentQuestion, currentQuestionShown, messages.length]);
 
   // Auto-scroll to bottom
   useEffect(() => {
