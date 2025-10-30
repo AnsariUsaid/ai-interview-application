@@ -425,12 +425,11 @@ This project is open source and available for educational purposes.
 - **Vite** for blazing fast development experience
 - **Radix UI** for accessible component primitives
 
-## 📞 Support
+## Support
 
 For issues, questions, or suggestions:
 - Open an issue on GitHub
 - Check existing issues for solutions
-- Review WARP.md for development guidelines
 
 ## 🗺️ Roadmap
 
