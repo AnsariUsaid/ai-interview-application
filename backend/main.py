@@ -151,23 +151,6 @@ async def parse_resume(file: UploadFile = File(...)):
     info["raw_text_snippet"] = (text[:300] + "...") if text else ""
     return info
 
-# @app.post("/generate-questions")
-# async def generate_questions(req: GenerateQuestionsRequest):
-#     prompt = (
-#         f"You are an interview question generator for the role: {req.role}.\n"
-#         "Generate exactly 6 questions as a JSON array with keys: id, difficulty, text, time_limit.\n"
-#         "Order: 2 easy (20s), 2 medium (60s), 2 hard (120s). Return only JSON."
-#     )
-#     content = call_llm(prompt, max_tokens=700)
-#     if not content:
-#         return {"questions": STATIC_BANK}
-#     try:
-#         questions = json.loads(content)
-#         if not isinstance(questions, list) or len(questions) != 6:
-#             raise ValueError("invalid shape")
-#         return {"questions": questions}
-#     except Exception:
-#         return {"questions": STATIC_BANK}
 
 @app.post("/generate-questions")
 async def generate_questions(req: GenerateQuestionsRequest):
@@ -237,6 +220,8 @@ async def evaluate_answer(req: EvaluateRequest):
         return json.loads(content)
     except Exception:
         return {"score": 5, "feedback": "AI response parse failed, fallback used."}
+
+
 @app.post("/final-summary")
 async def final_summary(req: FinalSummaryRequest):
     difficulty_weight = {"easy": 1, "medium": 2, "hard": 3}
@@ -256,14 +241,12 @@ async def final_summary(req: FinalSummaryRequest):
         final_percent = 0.0
         final_score = 0.0
 
-    # Build a detailed summary of all answers for the LLM
     answers_summary = ""
     for i, a in enumerate(req.answers, 1):
         answers_summary += f"\nQ{i} ({a.get('difficulty', 'unknown')}): {a.get('question_text', '')}\n"
         answers_summary += f"Answer: {a.get('answer_text', 'No answer')}\n"
         answers_summary += f"Score: {a.get('score', 0)}/10\n"
 
-    # Call LLM for AI-generated summary
     prompt = (
         f"You are a senior interviewer writing a final summary for {req.candidate_name or 'the candidate'}.\n"
         f"The candidate answered {len(req.answers)} questions and scored {final_score}/10 ({final_percent}%).\n\n"
@@ -277,11 +260,9 @@ async def final_summary(req: FinalSummaryRequest):
 
     ai_summary = call_llm(prompt, max_tokens=300)
     
-    # Use AI summary if available, otherwise fallback
     if ai_summary and ai_summary.strip():
         summary_text = ai_summary.strip()
     else:
-        # Fallback if LLM fails
         summary_text = (
             f"Candidate answered {len(req.answers)} questions. "
             f"Final Score: {final_score}/10 ({final_percent}%)."
